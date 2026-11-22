@@ -33,7 +33,13 @@ uint32_t g_calls = 0;  // main thread only
 
 bool g_modal = false;  // the game's settings screen runs: a loop outside the frames, on real time
 
-uint64_t clock_ms() { return (static_cast<uint64_t>(g_frame.load()) * 1000 + 30) / 60 + g_stall_ms.load(); }
+// Sixtieths of a second the clock went on without a frame of their own: a PC that cannot show 60 pictures
+// a second, outside a network game (see pace()).
+std::atomic<uint32_t> g_extra{0};
+
+uint64_t clock_ms() {
+  return (static_cast<uint64_t>(g_frame.load() + g_extra.load()) * 1000 + 30) / 60 + g_stall_ms.load();
+}
 
 uint64_t asked() {
   if (g_modal) return GetTickCount64();  // (kernel32's own: the screen keeps its own time)
@@ -68,13 +74,32 @@ using InputUpdate_t = void(__cdecl*)();
 InputUpdate_t oInputUpdate = nullptr;
 FILE* g_log = nullptr;
 
+// Holds the frames to 60 a second. A PC that cannot show that many (a busy video card) would play the game
+// in slow motion, with its sounds - which go by the game's clock - torn: the clock is 1/60 s a frame. So
+// outside a network game a frame that comes a whole sixtieth late, or two or three, takes them with it: the
+// clock goes on by that much more and the engine makes one longer step, as it does without the mod (it
+// takes steps of up to 0.1 s). The game then keeps its real speed down to 15 pictures a second. In a
+// network game every PC must make the same steps: there the clock stays 1/60 s a frame and a slow PC
+// slows the game for both.
+bool g_real_speed = false;  // (set at install: no network game, no [debug] fixed_clock)
+uint32_t g_late_frames = 0, g_late_ticks = 0;  // since the last word about it in the log
+
 void pace() {
   static LARGE_INTEGER freq{}, next{};
   if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
   LONGLONG period = freq.QuadPart / 60;
   LARGE_INTEGER now;
   QueryPerformanceCounter(&now);
-  if (!next.QuadPart || now.QuadPart - next.QuadPart > period * 4) next = now;  // start / long stall
+  if (!next.QuadPart || now.QuadPart - next.QuadPart > period * 4) {
+    next = now;  // start / long stall (a level being loaded): that time is nobody's
+  } else if (g_real_speed && now.QuadPart - next.QuadPart >= period) {
+    const uint32_t late = static_cast<uint32_t>((now.QuadPart - next.QuadPart) / period);  // 1 ... 4
+    const uint32_t ticks = late > 3 ? 3 : late;
+    g_extra.fetch_add(ticks);
+    next.QuadPart += period * late;
+    ++g_late_frames;
+    g_late_ticks += ticks;
+  }
   for (;;) {
     QueryPerformanceCounter(&now);
     LONGLONG left = next.QuadPart - now.QuadPart;
@@ -247,6 +272,13 @@ void __cdecl hkInputUpdate() {
   if (!g_cfg.fast) pace();
   g_shown_since_gate = 0;
   ++g_frame;
+  if (g_frame.load() % 1800 == 0) {  // (a word for whoever reads a player's log; a hiccup or two is not worth one)
+    if (g_late_frames >= 30)
+      LOGI("sim: %u of the last 1800 frames came late (this PC shows fewer than 60 pictures a second now): the clock went on "
+           "%u sixtieths of a second without a frame, the game keeps its speed",
+           g_late_frames, g_late_ticks);
+    g_late_frames = g_late_ticks = 0;
+  }
   g_calls = 0;
   rng_trace_frame(g_frame.load());
   sound::on_frame();
@@ -320,6 +352,7 @@ uint64_t now_ms() { return clock_ms(); }
 
 void install(const Config& cfg) {
   g_cfg = cfg;
+  g_real_speed = cfg.net_mode == Config::Net::Off && !cfg.fixed_clock && !cfg.fast;
   static const uint8_t jle[] = {0x7E, 0x09};
   static const uint8_t jmp[] = {0xEB, 0x09};
   if (!patch::replace("the game loop's own frame limiter", game::kLoopLimiterJle, jle, jmp, 2)) {
@@ -346,7 +379,8 @@ void install(const Config& cfg) {
     patch::hook("random integer", game::kRandInt, (void*)&hkRandInt, &oRandInt);
   }
   if (cfg.sim_log) g_log = _wfopen((module_dir() + L"in2net-sim.log").c_str(), L"w");
-  LOGI("sim: the game's clock is the mod's: 1/60 s a frame%s", cfg.fast ? ", frames not paced ([debug] fast)" : "");
+  LOGI("sim: the game's clock is the mod's: 1/60 s a frame%s%s", cfg.fast ? ", frames not paced ([debug] fast)" : "",
+       g_real_speed ? "; a frame that comes late takes the lost sixtieths with it" : "");
 }
 
 }  // namespace sim

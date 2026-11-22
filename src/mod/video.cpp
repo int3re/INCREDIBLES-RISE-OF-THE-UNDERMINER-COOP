@@ -279,7 +279,16 @@ void save_shot(IDirect3DDevice9* dev, unsigned frame) {
 
 HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst, HWND wnd, const RGNDATA* dirty) {
   unsigned f = ++g_frames;
-  if (f == 1 || f == 60 || f % 3600 == 0) LOGI("video: %u frames presented", f);
+  if (f == 1 || f == 60) LOGI("video: %u frames presented", f);
+  if (f % 1800 == 0) {  // (and how fast: what a player's log has to say about a game that "lags")
+    static DWORD mark = 0;
+    DWORD t = GetTickCount();
+    if (mark && t != mark)
+      LOGI("video: %u frames presented, %.1f a second lately", f, 1800 * 1000.0 / (t - mark));
+    else
+      LOGI("video: %u frames presented", f);
+    mark = t;
+  }
   if (tlog::enabled(tlog::Debug)) {
     static DWORD t0 = GetTickCount();
     static unsigned f0 = f;
@@ -290,6 +299,7 @@ HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst
       f0 = f;
     }
   }
+  if (g_cfg.slow_ms > 0) Sleep(static_cast<DWORD>(g_cfg.slow_ms));  // ([debug] slow: a busy video card)
   sim::on_present();   // (a loop of the game's that passes no frame gate is held to 60 pictures a second)
   postfx::apply(dev);  // the finished frame: crisper, its colours fuller
   if ((g_cfg.shot_every && f % g_cfg.shot_every == 0) ||

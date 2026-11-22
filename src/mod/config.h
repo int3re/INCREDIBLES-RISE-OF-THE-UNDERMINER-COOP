@@ -104,6 +104,11 @@ struct Config {
   std::string save_dir;
   // fast = 1: frames are not held to 60 a second (the game's clock is not real time anyway).
   bool fast = false;
+  // slow = N: every picture takes N ms more to show (a busy video card: a PC that cannot show 60 a second).
+  int slow_ms = 0;
+  // fixed_clock = 1: the clock is 1/60 s a frame even without a network game (a frame that comes late does
+  // not take the lost time with it): two runs of one script are then the same whatever the PC's load.
+  bool fixed_clock = false;
   // sim_log = 1: one line per game frame in in2net-sim.log (to compare two runs).
   bool sim_log = false;
   // rng_trace = <from>-<to>: for these game frames every draw of a random number goes to in2net-rng.log.

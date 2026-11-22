@@ -128,6 +128,8 @@ bool load_config(const std::wstring& path, Config& cfg) {
   cfg.force_shadows = get_int(path, L"debug", L"shadows", -1);
   cfg.camera_log = static_cast<unsigned>(get_int(path, L"debug", L"camera_log", 0));
   cfg.fast = get_bool(path, L"debug", L"fast", false);
+  cfg.fixed_clock = get_bool(path, L"debug", L"fixed_clock", false);
+  cfg.slow_ms = get_int(path, L"debug", L"slow", 0);
   cfg.ui_log = get_bool(path, L"debug", L"ui_log", false);
   cfg.notice_test = get_int(path, L"debug", L"notice", 0);
   cfg.ui_font = get_int(path, L"debug", L"ui_font", -1);
