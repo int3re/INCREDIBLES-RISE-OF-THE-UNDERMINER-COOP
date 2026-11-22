@@ -290,6 +290,7 @@ HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst
       f0 = f;
     }
   }
+  sim::on_present();   // (a loop of the game's that passes no frame gate is held to 60 pictures a second)
   postfx::apply(dev);  // the finished frame: crisper, its colours fuller
   if ((g_cfg.shot_every && f % g_cfg.shot_every == 0) ||
       std::find(g_cfg.shots.begin(), g_cfg.shots.end(), f) != g_cfg.shots.end())

@@ -87,6 +87,34 @@ void pace() {
   next.QuadPart += period;
 }
 
+// --- pictures shown outside the frames ---------------------------------------------------------
+// pace() holds the game's frames; a loop of the game's own inside one frame shows pictures that pass no
+// gate. Its settings screen is one: it relied on the engine's frame limiter, which the mod has taken out,
+// and showed pictures as fast as the video card could (550 a second and more). So the pictures shown
+// since the last gate are counted: from the third on each waits for 1/60 s after the one before it.
+// (A frame of the game shows one picture. The game's clock is not touched: it does not run on real time.)
+std::atomic<uint32_t> g_shown_since_gate{0};
+
+void pace_picture() {
+  static LARGE_INTEGER freq{}, last{};
+  if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+  LARGE_INTEGER now;
+  QueryPerformanceCounter(&now);
+  if (g_shown_since_gate.fetch_add(1) + 1 > 2 && last.QuadPart) {
+    const LONGLONG due = last.QuadPart + freq.QuadPart / 60;
+    for (;;) {
+      QueryPerformanceCounter(&now);
+      LONGLONG left = due - now.QuadPart;
+      if (left <= 0) break;
+      if (left * 1000 / freq.QuadPart >= 2)
+        Sleep(1);
+      else
+        YieldProcessor();
+    }
+  }
+  last = now;
+}
+
 uint32_t scene_id() {
   auto p = patch::read<const uint32_t*>(game::kScenePtr);
   return p ? *p : 0;
@@ -217,6 +245,7 @@ void __cdecl hkInputUpdate() {
   if (!g_main_thread) g_main_thread = GetCurrentThreadId();
   log_frame();  // the frame that has just been played
   if (!g_cfg.fast) pace();
+  g_shown_since_gate = 0;
   ++g_frame;
   g_calls = 0;
   rng_trace_frame(g_frame.load());
@@ -280,6 +309,11 @@ void flush() {
 }
 
 bool in_settings_screen() { return g_modal; }
+
+void on_present() {
+  if (g_cfg.fast || !oInputUpdate || GetCurrentThreadId() != g_main_thread) return;
+  pace_picture();
+}
 uint32_t frame() { return g_frame.load(); }
 uint32_t scene() { return scene_id(); }
 uint64_t now_ms() { return clock_ms(); }

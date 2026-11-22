@@ -25,6 +25,10 @@ void flush();
 // True while the game's own settings screen runs (its loop is outside the game's frames).
 bool in_settings_screen();
 
+// A picture is about to be shown (the device's Present). Pictures of a loop that passes no frame gate
+// - the game's settings screen - are held to 60 a second here.
+void on_present();
+
 // The scene the game is in, as its four letters ('MNUS' = 0x4D4E5553: the title and the main menu); 0 = none.
 uint32_t scene();
 

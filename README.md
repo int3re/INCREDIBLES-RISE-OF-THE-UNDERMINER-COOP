@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <img alt="версия 0.5.0" src="https://img.shields.io/badge/версия-0.5.0-E2231A">
+  <img alt="версия 0.5.1" src="https://img.shields.io/badge/версия-0.5.1-E2231A">
   <img alt="лаунчер 1.2.0" src="https://img.shields.io/badge/лаунчер-1.2.0-F78F1E">
   <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078d4">
   <img alt="2 игрока" src="https://img.shields.io/badge/игроков-2-FFD63C">
