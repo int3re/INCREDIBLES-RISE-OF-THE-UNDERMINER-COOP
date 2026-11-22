@@ -29,9 +29,9 @@ if os.path.isdir(mock_dir):
 
 # title -> main menu -> up to СЕТЕВАЯ ИГРА -> the page; host: СОЗДАТЬ ИГРУ, later НАЧАТЬ ИГРУ;
 # guest: down to the host's game (or to the address row, typed) and in
-HOST_KEYS = os.environ.get("IN2_HOST_KEYS", "420 menu.start; 640 menu.up; 760 menu.a; 960 menu.a; 1560 menu.a")
-GUEST_KEYS = os.environ.get("IN2_GUEST_KEYS", "420 menu.start; 640 menu.up; 760 menu.a; 1260 menu.down; 1320 menu.a" if via == "mock" else
-                            "420 menu.start; 640 menu.up; 760 menu.a; 1100 menu.down; 1160 type.127.0.0.1; 1260 menu.a")
+HOST_KEYS = os.environ.get("IN2_HOST_KEYS", "420 menu.start; 640 menu.down; 700 menu.down; 760 menu.a; 960 menu.a; 1560 menu.a")
+GUEST_KEYS = os.environ.get("IN2_GUEST_KEYS", "420 menu.start; 640 menu.down; 700 menu.down; 760 menu.a; 1260 menu.down; 1320 menu.a" if via == "mock" else
+                            "420 menu.start; 640 menu.down; 700 menu.down; 760 menu.a; 1100 menu.down; 1160 type.127.0.0.1; 1260 menu.a")
 
 
 def ini(name, slot, more="", video=""):

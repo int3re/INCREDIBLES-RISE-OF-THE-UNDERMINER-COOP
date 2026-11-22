@@ -110,6 +110,7 @@ bool load_config(const std::wstring& path, Config& cfg) {
   cfg.no_activate = get_bool(path, L"debug", L"no_activate", false);
   cfg.offscreen = get_bool(path, L"debug", L"offscreen", false);
   cfg.script = get(path, L"debug", L"script", "");
+  cfg.binds = get(path, L"debug", L"bind", "");
   cfg.save_dir = get(path, L"debug", L"save_dir", "");
   {
     std::string t = get(path, L"debug", L"rng_trace", "");

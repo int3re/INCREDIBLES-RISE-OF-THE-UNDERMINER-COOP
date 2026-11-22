@@ -252,27 +252,66 @@ bool build() {
     g_groups.push_back(g);
   }
 
-  // --- СЕТЕВАЯ ИГРА, the seventh button of the main menu: АВТОРЫ's frame and label, a row under БОНУС ---
+  // --- the main menu: СЕТЕВАЯ ИГРА is its third button, after ОДИН ИГРОК and ДВА ИГРОКА ---
+  // Seven rows where the game has six. The game's own buttons go to their new rows as changed copies of
+  // their assets (handed to the engine in the assets' place); the mod's button is АВТОРЫ's frame and label
+  // over again. The seven are together as tall as the picture on their left: frames 33 high every 36
+  // (the game's are 36 high every 40). Each row has two puffs of steam, shown as the row takes the focus.
   {
-    const uint32_t bonus_text = hash("UIS MAINM BONUS TEXT"), first_text = hash("UIS MAINM NEW GAME 1PLYR TEXT");
+    constexpr int kMainRows = 7, kMine = 2, kFrom = 5;  // (the mod's row; the game's row its button is made from)
+    constexpr float kTop = 135.0f, kPitch = 36.0f, kBoxH = 33.0f, kTextH = 26.0f;
+    static const struct {
+      const char* box;
+      const char* text;
+      int was;  // the row the game has it in
+    } kButtons[kMainRows] = {{"UIS MAINM NEW GAME 1 PLYR BOX", "UIS MAINM NEW GAME 1PLYR TEXT", 0},
+                             {"UIS MAINM NEW GAME 2PLYR BOX", "UIS MAINM NEW GAME 2PLYR TEXT", 1},
+                             {"UIS MAINM CREDITS BOX", "UIS MAINM CREDITS TEXT", 4},  // (what the mod's is made from)
+                             {"UIS MAINM OPTIONS BOX", "UIS MAINM OPTIONS TEXT", 2},
+                             {"UIS MAINM LOAD GAME BOX", "UIS MAINM LOAD GAME TEXT", 3},
+                             {"UIS MAINM CREDITS BOX", "UIS MAINM CREDITS TEXT", 4},
+                             {"UIS MAINM BONUS BOX", "UIS MAINM BONUS TEXT", 5}};
+    auto puff_name = [](int column, int row) {  // (the game names them by a place: its six rows are Y80 ... Y330)
+      return std::string("_UI_STEAM UII X") + (column ? "460" : "380") + " Y" + std::to_string(80 + 50 * row);
+    };
     const uint32_t net_box = hash("UIS MAINM NETWORK BOX");
-    Names main = {{hash("UIS MAINM CREDITS TEXT"), g_main_text},
-                  {hash("UIS MAINM CREDITS BOX"), net_box},
-                  {hash("UIS CREDITS SCREEN"), g_screen}};  // chosen: the network page comes up, as АВТОРЫ brings its own
-    Asset box, text;
-    if (!clone("UIS MAINM CREDITS BOX", main, box) || !clone("UIS MAINM CREDITS TEXT", main, text)) return false;
-    wrf(box.data.data() + 0x14, 375.0f);
-    wrf(text.data.data() + 0x14, 380.0f);
-    wr32(text.data.data() + 0x38, bonus_text);  // above
-    wr32(text.data.data() + 0x3C, first_text);  // below: round to the first
-    wr32(text.data.data() + 0x50, g_words[kLabel].id);
-    const uint32_t steam_a = hash("_UI_STEAM UII X380 Y280"), steam_b = hash("_UI_STEAM UII X460 Y280");
-    drop_links(text, [&](uint16_t, uint16_t, uint32_t to) { return to == steam_a || to == steam_b; });  // АВТОРЫ's own row's puffs
-    add(box);
-    add(text);
-    // БОНУС's "below" and the first button's "above" lead to the new one.
-    if (auto p = static_cast<uint8_t*>(oFind(bonus_text, nullptr))) wr32(p + 0x3C, g_main_text);
-    if (auto p = static_cast<uint8_t*>(oFind(first_text, nullptr))) wr32(p + 0x38, g_main_text);
+    uint32_t texts[kMainRows];
+    for (int r = 0; r < kMainRows; ++r) texts[r] = r == kMine ? g_main_text : hash(kButtons[r].text);
+    for (int r = 0; r < kMainRows; ++r) {
+      Names row;
+      for (int c = 0; c < 2; ++c) row[hash(puff_name(c, kButtons[r].was))] = hash(puff_name(c, r));
+      if (r == kMine) {
+        row[hash("UIS MAINM CREDITS TEXT")] = g_main_text;
+        row[hash("UIS MAINM CREDITS BOX")] = net_box;
+        row[hash("UIS CREDITS SCREEN")] = g_screen;  // chosen: the network page comes up, as АВТОРЫ brings its own
+      }
+      Asset box, text;
+      if (!clone(kButtons[r].box, row, box) || !clone(kButtons[r].text, row, text)) return false;
+      wrf(box.data.data() + 0x14, kTop + kPitch * r);
+      wrf(box.data.data() + 0x20, kBoxH);
+      wrf(text.data.data() + 0x14, kTop + kPitch * r + (kBoxH - kTextH) / 2);
+      wr32(text.data.data() + 0x38, texts[(r + kMainRows - 1) % kMainRows]);  // above
+      wr32(text.data.data() + 0x3C, texts[(r + 1) % kMainRows]);              // below
+      if (r == kMine) {
+        wr32(text.data.data() + 0x50, g_words[kLabel].id);
+        add(box);
+        add(text);
+      } else {
+        g_other.push_back(box);
+        g_other.push_back(text);
+      }
+      for (int c = 0; c < 2; ++c) {  // the row's puffs: the game's six rows' moved, the seventh's made from the sixth's
+        Names puff;
+        if (r > kFrom) puff[hash(puff_name(c, kFrom))] = hash(puff_name(c, r));
+        Asset steam;
+        if (!clone(puff_name(c, r > kFrom ? kFrom : r), puff, steam)) return false;
+        wrf(steam.data.data() + 0x14, kTop - 5.0f + kPitch * r);
+        if (r > kFrom)
+          add(steam);
+        else
+          g_other.push_back(steam);
+      }
+    }
     // The main menu's group with the two more.
     uint32_t size = 0;
     if (auto p = static_cast<const uint8_t*>(oFind(hash("UIS MAINM GROUP"), &size))) {
@@ -350,8 +389,14 @@ void* __cdecl hkFindByType(uint32_t type, int index, uint32_t* size) {
     }
   }
   void* p = oFindByType(type, index, size);
-  if (p && type == kGrup && ready())  // a group the mod has a longer copy of
-    if (void* own = mine(rd32(static_cast<const uint8_t*>(p)), size)) return own;
+  if (p && (type == kGrup || type == kDyna) && ready()) {  // one of the game's that the mod has a changed copy of
+    uint32_t id = rd32(static_cast<const uint8_t*>(p));
+    for (Asset& a : g_other)
+      if (a.id == id) {
+        if (size) *size = static_cast<uint32_t>(a.data.size());
+        return a.data.data();
+      }
+  }
   return p;
 }
 

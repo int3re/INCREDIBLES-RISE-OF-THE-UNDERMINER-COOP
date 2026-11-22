@@ -941,12 +941,13 @@ void settings_head(Ctx& x, float left, float top) {
   c.text_sign(L"НАСТРОЙКИ", tf, tx, top + 6, GOLD_HI, FLAME, 2.5f, BLACK, tl);
   c.pop();
 
-  const int tabs = 4;
-  const wchar_t* names[tabs] = {L"ЛАУНЧЕР", L"ГРАФИКА", L"УПРАВЛЕНИЕ", L"СЕТЬ"};
+  const int tabs = 5;
+  const wchar_t* names[tabs] = {L"ЛАУНЧЕР", L"ГРАФИКА", L"ЗВУК", L"УПРАВЛЕНИЕ", L"СЕТЬ"};
   Font nf = D(12, 0.06f);
-  float widths[tabs], total = (tabs - 1) * 8;
+  const float pad = 13, gap = 6;
+  float widths[tabs], total = (tabs - 1) * gap;
   for (int i = 0; i < tabs; ++i) {
-    widths[i] = 17 + c.measure(names[i], nf).width + 17;
+    widths[i] = pad + c.measure(names[i], nf).width + pad;
     total += widths[i];
   }
   float px = kW - left - total;
@@ -960,9 +961,9 @@ void settings_head(Ctx& x, float left, float top) {
     } else {
       c.round_box(px, ty, w, th, th / 2, over ? 0x1B0D0E : BLACK, 2, over ? GOLD : LINE);
     }
-    c.text_mid(names[i], nf, px + 17, ty + th / 2, on ? INK : CREAM);
+    c.text_mid(names[i], nf, px + pad, ty + th / 2, on ? INK : CREAM);
     hit(x, H_Tab0 + i, px, top, w, 44);
-    px += w + 8;
+    px += w + gap;
   }
 }
 
@@ -1082,20 +1083,67 @@ void stepper(Ctx& x, int id_prev, int id_next, const std::wstring& value, float 
   c.text_mid(value, f, sx + (w - tw) / 2, sy + h / 2, on ? CREAM : DIM, one);
 }
 
-// A row of the mod's settings: its name, and at the right what sets it.
-void game_row(Ctx& x, gset::Row r, float lx, float ty, float w, float h) {
+uint32_t mix(uint32_t a, uint32_t b, float t) {
+  uint32_t out = 0;
+  for (int shift = 16; shift >= 0; shift -= 8) {
+    const float ca = static_cast<float>((a >> shift) & 0xFF), cb = static_cast<float>((b >> shift) & 0xFF);
+    out |= static_cast<uint32_t>(ca + (cb - ca) * t + 0.5f) << shift;
+  }
+  return out;
+}
+
+// A level of 0 to 100: a round minus and a round plus, and between them twenty steps that rise like a
+// meter's - lit up to the level. A press on a step sets it; left of the first one - none.
+void level(Ctx& x, gset::Row r, float sx, float sy, float w, float h) {
+  Canvas& c = x.c;
+  const int base = H_Row + r * kRowParts, at = gset::value(r), n = gset::count(r) - 1;
+  const float cy = sy + h / 2, rad = 15;
+  for (int side = 0; side < 2; ++side) {
+    const int id = base + (side ? P_Next : P_Prev);
+    const float cx = side ? sx + w - rad : sx + rad;
+    const bool can = side ? at < n : at > 0, over = can && x.m.hover == id, down = can && x.m.pressed == id;
+    c.ellipse(cx, cy, rad, rad, over ? GOLD : can ? LINE : 0x2B1819);
+    c.ellipse(cx, cy, rad - 2, rad - 2, down ? 0x2A1A06 : over ? 0x1B0D0E : FIELD);
+    const uint32_t ink = !can ? DIM : over ? GOLD : CREAM;
+    c.fill(cx - 6, cy - 1.25f, 12, 2.5f, ink);
+    if (side) c.fill(cx - 1.25f, cy - 6, 2.5f, 12, ink);
+    if (can) hit(x, id, cx - rad - 2, sy, 2 * rad + 4, h);
+  }
+  const float bx = sx + 2 * rad + 10, bw = w - 2 * (2 * rad + 10), step = bw / n;
+  const int over_id = x.m.hover - base - P_Item;  // (the step under the pointer, if it is one of this level's)
+  const int aim = over_id >= 0 && over_id <= n ? over_id : -1;
+  hit(x, base + P_Item, sx + 2 * rad, sy, 10, h);
+  for (int i = 1; i <= n; ++i) {
+    const float x0 = bx + (i - 1) * step, th = 7 + 15.0f * i / n;
+    const bool lit = i <= at;
+    c.round_fill(x0 + 1.5f, cy + 11 - th, step - 3, th, 1.5f, lit ? mix(GOLD, FLAME, static_cast<float>(i - 1) / (n - 1)) : TRACK);
+    if (aim >= 0 && ((!lit && i <= aim) || (lit && i > aim))) c.round_fill(x0 + 1.5f, cy + 11 - th, step - 3, th, 1.5f, CREAM, lit ? 0.45f : 0.22f);
+    hit(x, base + P_Item + i, x0, sy, step, h);
+  }
+}
+
+// A row of the settings: its name, and at the right what sets it.
+void game_row(Ctx& x, gset::Row r, float lx, float ty, float w, float h, float ctl_w = 216) {
   Canvas& c = x.c;
   const bool on = gset::usable(r);
   const int base = H_Row + r * kRowParts;
   c.text_mid(gset::label(r), T(14), lx, ty + h / 2, on ? CREAM : DIM);
   switch (gset::kind(r)) {
     case gset::Kind::Choice:
-      stepper(x, base + P_Prev, base + P_Next, gset::name(r, gset::value(r)), lx + w - 216, ty, 216, h, on);
+      stepper(x, base + P_Prev, base + P_Next, gset::name(r, gset::value(r)), lx + w - ctl_w, ty, ctl_w, h, on);
       break;
     case gset::Kind::Pair: {
-      const float half = (216 - 6) / 2.0f;
+      const float half = (ctl_w - 6) / 2.0f;
       for (int i = 0; i < 2; ++i)
-        pill_button(x, base + P_Item + i, gset::name(r, i), lx + w - 216 + i * (half + 6), ty, h, 0, half, gset::value(r) == i ? 1 : 0, on);
+        pill_button(x, base + P_Item + i, gset::name(r, i), lx + w - ctl_w + i * (half + 6), ty, h, 0, half, gset::value(r) == i ? 1 : 0, on);
+      break;
+    }
+    case gset::Kind::Level: {  // the name, the level, and its number at the right end
+      const std::wstring pct = std::to_wstring(gset::percent(r)) + L" %";
+      Font nf = Mo(13, 700);
+      const float num_w = c.measure(L"100 %", nf).width, name_w = 78;
+      c.text_mid(pct, nf, lx + w - c.measure(pct, nf).width, ty + h / 2, gset::percent(r) ? GOLD : MUTED);
+      level(x, r, lx + name_w, ty, w - name_w - num_w - 14, h);
       break;
     }
   }
@@ -1123,31 +1171,41 @@ void page_foot(Ctx& x, float left, const std::wstring& note, uint32_t rgb, bool 
 
 const wchar_t kNoMod[] = L"Мод не установлен. Эти настройки появятся вместе с ним: они хранятся в in2net.ini в папке игры.";
 
-// ГРАФИКА and СЕТЬ: two boxes - rows of settings with notes under them, or (the second box of СЕТЬ) how
-// a network game is begun.
-void page_game(Ctx& x, float left, float top, bool net) {
+// ГРАФИКА, СЕТЬ and ЗВУК: two boxes - rows of settings with notes under
+// them, or (the second box of all but ГРАФИКА) a few lines of what it is all about.
+enum { kPageGraphics, kPageNet, kPageSound };
+void page_game(Ctx& x, float left, float y1, int which) {
   Canvas& c = x.c;
   struct Group {
     const wchar_t* name;
     int from, to;
     const wchar_t* note;
   };
-  const Group groups[2][2] = {
+  const Group groups[3][2] = {
       {{L"ЭКРАН И ИГРА", gset::kMode, gset::kFirstPicture, L""},
        {L"КАРТИНКА", gset::kFirstPicture, gset::kFirstNet,
         L"Сглаживание и чёткость текстур делает видеокарта, резкость и цвета — последний штрих мода поверх кадра. "
         L"На ход игры они не влияют: у игроков по сети могут быть разными.\n\n"
         L"«Полный экран игры» — как в оригинале: мод тогда картинку не трогает, широкого кадра и сглаживания нет."}},
-      {{L"СЕТЕВАЯ ИГРА", gset::kFirstNet, gset::kRows,
+      {{L"СЕТЕВАЯ ИГРА", gset::kFirstNet, gset::kFirstSound,
         L"Задержка ввода: больше — спокойнее при плохой связи, меньше — отзывчивее. Действует та, что у хоста."},
-       {L"КАК СЫГРАТЬ", 0, 0, L""}}};
-  const wchar_t* steps[4] = {L"Оба запускают игру и выбирают в главном меню «СЕТЕВАЯ ИГРА».",
-                             L"Хост — «СОЗДАТЬ ИГРУ». Друг в Steam видит её в списке; без Steam набирает адрес хоста.",
-                             L"Хост — «НАЧАТЬ ИГРУ»: обе игры откроются заново, уже в сетевой игре.",
-                             L"В главном меню игрок 1 выбирает «ДВА ИГРОКА»."};
-  const Group* page = groups[net ? 1 : 0];
+       {L"КАК СЫГРАТЬ", 0, 0, L""}},
+      {{L"ГРОМКОСТЬ", gset::kFirstSound, gset::kRows, L""}, {L"ЧТО ЭТО ЗА ГРОМКОСТЬ", 0, 0, L""}}};
+  // (the second box's lines; the network game's are steps, with their numbers)
+  const wchar_t* lines[3][4] = {
+      {},
+      {L"Оба запускают игру и выбирают в главном меню «СЕТЕВАЯ ИГРА».",
+       L"Хост — «СОЗДАТЬ ИГРУ». Друг в Steam видит её в списке; без Steam набирает адрес хоста.",
+       L"Хост — «НАЧАТЬ ИГРУ»: обе игры откроются заново, уже в сетевой игре.",
+       L"В главном меню игрок 1 выбирает «ДВА ИГРОКА»."},
+      {L"Это громкость самой игры: те же два ползунка, что на её экране ОПЦИИ.",
+       L"В сетевой игре экран ОПЦИИ не открывается — громкость настраивается здесь.",
+       L"Игра читает её при запуске: новая громкость будет со следующего запуска.", nullptr}};
+  const bool numbered = which == kPageNet;
+  const Group* page = groups[which];
+  const wchar_t* const* steps = lines[which];
   const float col_w = (kW - 2 * left - 24) / 2.0f, cw = col_w - 4 - 32;
-  const float row_h = net ? 44.0f : 40.0f, row_gap = net ? 6.0f : 5.0f;
+  const float row_h = which == kPageGraphics ? 40.0f : 44.0f, row_gap = which == kPageGraphics ? 5.0f : 6.0f;
   const float h3 = c.line_h(D(13, 0.06f));
   TextOpt wrap;
   wrap.wrap = true;
@@ -1165,11 +1223,10 @@ void page_game(Ctx& x, float left, float top, bool net) {
       h += n * row_h + (n - 1) * row_gap;
       if (page[i].note[0]) h += row_gap + 6 + c.measure(page[i].note, T(12), wrap).height;
     } else {
-      for (int k = 0; k < 4; ++k) h += c.measure(steps[k], T(13), step_wrap).height + (k ? 10.0f : 0.0f);
+      for (int k = 0; k < 4 && steps[k]; ++k) h += c.measure(steps[k], T(13), step_wrap).height + (k ? 10.0f : 0.0f);
     }
     box_h = std::max(box_h, h);
   }
-  const float y1 = top + 44 + 16;
   for (int i = 0; i < 2; ++i) {
     Section s = section_begin(x, left + i * (col_w + 24), y1, col_w, box_h, page[i].name);
     float y = s.cy + 2 + 6;
@@ -1180,27 +1237,35 @@ void page_game(Ctx& x, float left, float top, bool net) {
       }
       if (page[i].note[0]) c.text(page[i].note, T(12), s.cx, y + 6, MUTED, wrap);
     } else {
-      for (int k = 0; k < 4; ++k) {  // the steps, each with its number on a disc of the sign's colours
+      for (int k = 0; k < 4 && steps[k]; ++k) {  // each line after a disc of the sign's colours (a step: with its number)
         if (k) y += 10;
-        c.ellipse_gradient(s.cx + 10, y + 10, 10, 10, GOLD, FLAME);
-        wchar_t num[2] = {static_cast<wchar_t>(L'1' + k), 0};
-        Font nf = Mo(11, 700);
-        c.text_mid(num, nf, s.cx + (20 - c.measure(num, nf).width) / 2, y + 10, INK);
+        if (numbered) {
+          c.ellipse_gradient(s.cx + 10, y + 10, 10, 10, GOLD, FLAME);
+          wchar_t num[2] = {static_cast<wchar_t>(L'1' + k), 0};
+          Font nf = Mo(11, 700);
+          c.text_mid(num, nf, s.cx + (20 - c.measure(num, nf).width) / 2, y + 10, INK);
+        } else {
+          c.ellipse_gradient(s.cx + 10, y + 10, 5, 5, GOLD, FLAME);
+        }
         y += c.text(steps[k], T(13), s.cx + 22 + 10, y, TEXT2, step_wrap);
       }
     }
   }
   const bool mod = gset::has_mod();
-  const wchar_t* note = !mod ? kNoMod
-                        : net ? L"Настройки сетевой игры из in2net.ini. Действуют со следующего запуска игры."
-                              : L"Настройки мода из in2net.ini. Громкость и графику самой игры меняет её экран ОПЦИИ. "
-                                L"Действуют со следующего запуска игры.";
-  page_foot(x, left, note, mod ? CREAM : WAIT, mod);
+  const wchar_t* notes[3] = {L"Настройки мода из in2net.ini. Действуют со следующего запуска игры.",
+                             L"Настройки сетевой игры из in2net.ini. Действуют со следующего запуска игры.",
+                             L"Громкость — настройка самой игры, она хранится там же, где её клавиши. "
+                             L"Действует со следующего запуска игры."};
+  if (which == kPageSound)  // (the game's own: there with or without the mod)
+    page_foot(x, left, notes[which], CREAM, true);
+  else
+    page_foot(x, left, mod ? notes[which] : kNoMod, mod ? CREAM : WAIT, mod);
 }
 
 // --- the game's keys: УПРАВЛЕНИЕ -----------------------------------------------------------------------
 
-// A key's cell: the key's name; while it waits for a key - an edge that glows and "жду клавишу".
+// A key's cell: the key's name (and the mouse's button the action has besides); while it waits for a key or a
+// button - an edge that glows and "клавиша / мышь".
 void key_cell(Ctx& x, int action, float bx, float by, float w, float h) {
   Canvas& c = x.c;
   const Model& m = x.m;
@@ -1215,18 +1280,20 @@ void key_cell(Ctx& x, int action, float bx, float by, float w, float h) {
     const float glow = 0.55f + 0.45f * static_cast<float>(std::sin(m.time * 6.0));
     c.round_fill(bx - 2, by - 2, w + 4, h + 4, h / 2 + 2, GOLD, 0.25f + 0.35f * glow);
     c.round_box(bx, by, w, h, h / 2, 0x2A1A06, 2, GOLD);
-    const wchar_t* ask = L"жду клавишу";
+    const wchar_t* ask = L"клавиша / мышь";
     const float tw = std::min(c.measure(ask, f).width, one.max_w);
     c.text_mid(ask, f, bx + (w - tw) / 2, by + h / 2, GOLD, one);
   } else {
     c.round_box(bx, by, w, h, h / 2, fixed ? COAL : hover ? 0x1B0D0E : FIELD, 2, fixed ? 0x2B1819 : hover ? GOLD : LINE);
     const std::wstring name = keys::shown(player, action);
+    if (c.measure(name, f).width > one.max_w) f = T(11, 700);  // (a long key's name with a button of the mouse after it)
     float tw = std::min(c.measure(name, f).width, one.max_w);
     if (fixed) {  // (the game's own: a small lock before the name)
       c.icon(kLock, bx + (w - tw - 16) / 2, by + (h - 12) / 2 - 1, 12, DIM, 2.4f);
       c.text_mid(name, f, bx + (w - tw - 16) / 2 + 16, by + h / 2, DIM, one);
     } else {
-      c.text_mid(name, f, bx + (w - tw) / 2, by + h / 2, keys::code(player, action) == 0 ? DIM : CREAM, one);
+      const bool none = keys::code(player, action) == 0 && keys::mouse(player, action) < 0;
+      c.text_mid(name, f, bx + (w - tw) / 2, by + h / 2, none ? DIM : CREAM, one);
     }
   }
   if (!fixed) hit(x, id, bx, by, w, h);
@@ -1241,12 +1308,13 @@ void page_keys(Ctx& x, float left, float top) {
   const float pw = 118;
   pill_button(x, H_KeysOne, L"ИГРОК 1", left, y0, 36, 0, pw, m.keys_player == 0 ? 1 : 0, true, 0.06f);
   pill_button(x, H_KeysTwo, L"ИГРОК 2", left + pw + 8, y0, 36, 0, pw, m.keys_player == 1 ? 1 : 0, true, 0.06f);
+  const float hx = left + 2 * pw + 8 + 18;
   TextOpt how;
   how.ellipsis = true;
-  how.max_w = kW - left - (left + 2 * pw + 8 + 18);
-  c.text_mid(m.capture >= 0 ? L"Нажмите новую клавишу для действия. Esc — отмена."
-                            : L"Нажмите на клавишу действия, потом — на новую клавишу.",
-             T(13, 500), left + 2 * pw + 8 + 18, y0 + 18, CREAM, how, 0.9f);
+  how.max_w = kW - left - hx;
+  c.text_mid(m.capture >= 0 ? L"Нажмите клавишу или кнопку мыши на этой ячейке (ту же кнопку — убрать). Esc — отмена."
+                            : L"Нажмите на ячейку действия, потом — клавишу или кнопку мыши.",
+             T(13, 500), hx, y0 + 18, CREAM, how, 0.9f);
   // the three boxes
   const float y1 = y0 + 36 + 12, box_h = (kH - 44 - 5 - 44 - 10) - y1;
   const float col_w = (kW - 2 * left - 2 * 12) / 3.0f, cw = col_w - 4 - 28, cell_w = 118, row_h = 30, pitch = 33;
@@ -1267,18 +1335,20 @@ void page_keys(Ctx& x, float left, float top) {
     }
   }
   page_foot(x, left,
-            L"Клавиши — самой игры, те же, что на её экране ОПЦИИ. В сетевой игре каждый играет на своём ПК клавишами "
-            L"игрока 1; клавиши игрока 2 — для игры вдвоём за одним ПК. Действуют со следующего запуска игры.",
+            L"Клавиши и кнопки мыши — самой игры (её экран ОПЦИИ); боковые кнопки мыши работают только с модом. В сетевой "
+            L"игре каждый играет на своём ПК клавишами игрока 1. Действуют со следующего запуска игры.",
             CREAM, true);
 }
 
 void settings(Ctx& x) {
   const float left = 40, top = 48 + 20;
   settings_head(x, left, top);
+  const float y1 = top + 44 + 16;
   switch (x.m.tab) {
-    case Tab::Graphics: page_game(x, left, top, false); break;
+    case Tab::Graphics: page_game(x, left, y1, kPageGraphics); break;
+    case Tab::Sound: page_game(x, left, y1, kPageSound); break;
     case Tab::Controls: page_keys(x, left, top); break;
-    case Tab::Net: page_game(x, left, top, true); break;
+    case Tab::Net: page_game(x, left, y1, kPageNet); break;
     default: page_launcher(x, left, top); break;
   }
 }
@@ -1373,12 +1443,12 @@ bool demo(const std::wstring& screen_name, Model& m) {
     m.screen = Screen::Settings;
     m.back = Screen::Ready;
     m.inst.version = m.pack.version;
-  } else if (screen == L"graphics" || screen == L"net" || screen == L"controls" || screen == L"controls2" ||
+  } else if (screen == L"graphics" || screen == L"net" || screen == L"sound" || screen == L"controls" || screen == L"controls2" ||
              screen == L"controls-wait") {
     m.screen = Screen::Settings;
     m.back = Screen::Ready;
     m.inst.version = m.pack.version;
-    m.tab = screen == L"graphics" ? Tab::Graphics : screen == L"net" ? Tab::Net : Tab::Controls;
+    m.tab = screen == L"graphics" ? Tab::Graphics : screen == L"net" ? Tab::Net : screen == L"sound" ? Tab::Sound : Tab::Controls;
     m.keys_player = screen == L"controls2" ? 1 : 0;
     m.capture = screen == L"controls-wait" ? 4 : -1;
     gset::load_canned();

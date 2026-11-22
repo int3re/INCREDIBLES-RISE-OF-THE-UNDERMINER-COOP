@@ -23,7 +23,7 @@
 namespace lz {
 
 constexpr int kW = 960, kH = 600;  // the window, in units of 1/96 inch
-constexpr wchar_t kLauncherVersion[] = L"1.1.0";
+constexpr wchar_t kLauncherVersion[] = L"1.2.0";
 // The mod's public repository: "https://github.com/<owner>/<name>" and the same without the scheme.
 // Were they empty, the launcher would install the mod it carries and ask the network nothing.
 constexpr wchar_t kRepoUrl[] = L"https://github.com/int3re/INCREDIBLES-RISE-OF-THE-UNDERMINER-COOP";
@@ -68,7 +68,7 @@ struct Settings {
   std::vector<std::wstring> notes;
 };
 
-enum class Tab { Launcher, Graphics, Controls, Net };  // the pages of the settings
+enum class Tab { Launcher, Graphics, Sound, Controls, Net };  // the pages of the settings
 
 enum class Pending { None, Install, Uninstall, Launcher };
 enum class Fix { None, Retry, Back, Recheck };
@@ -119,7 +119,7 @@ enum HitId {
   H_Back, H_Toggle1, H_Toggle2, H_Toggle3, H_Toggle4, H_ProxyAuto, H_ProxyNone, H_ProxyOwn, H_ProxyField,
   H_FolderSettings, H_OpenLog, H_MenuLog, H_Reinstall, H_Uninstall,
   H_Accent0, H_Accent1, H_Accent2, H_Accent3,
-  H_Tab0, H_Tab1, H_Tab2, H_Tab3,                      // the settings' pages
+  H_Tab0, H_Tab1, H_Tab2, H_Tab3, H_Tab4,              // the settings' pages
   H_KeysOne, H_KeysTwo,                                // УПРАВЛЕНИЕ: whose keys
   H_Reset,                                             // "По умолчанию" of the page shown
   H_Count,
@@ -128,8 +128,8 @@ enum HitId {
   // A key's cell of УПРАВЛЕНИЕ: H_Key + the action.
   H_Key = 3000,
 };
-constexpr int kRowParts = 16;
-enum RowPart { P_Prev, P_Next, P_Item };  // P_Item + i: a pair's button i
+constexpr int kRowParts = 32;
+enum RowPart { P_Prev, P_Next, P_Item };  // P_Item + i: a pair's button i, a level's step i
 struct Hit {
   int id;
   D2D1_RECT_F r;     // in the space of `inv`

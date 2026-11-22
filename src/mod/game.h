@@ -87,6 +87,17 @@ inline constexpr uintptr_t kShadowsOff = 0x0078834C;        // byte: shadows off
 // int __cdecl (int handle, state*): the port's stand-in for the Xbox XInputGetState;
 // handle = player + 1, state = 0x20 bytes (packet, buttons, 8 pressure buttons, 4 sticks).
 inline constexpr uintptr_t kPadGetState = 0x0067D120;
+// What a control is bound to: three numbers an action in the game's registry key, "p<player>\<ACTION>_<0..2>",
+// each (device << 16) | code - device 1 the keyboard (a DirectInput key number), 2 the mouse, 3 ... 12 pads.
+// The mouse's codes (the game's name table at 0x704DE8): 0 ... 8 the wheel and the axes, 9 left, 10 right,
+// 11 middle, 12 ... 16 "button 4" ... "button 8".
+// float __thiscall (int code, int player) (ret 8) of the input manager: a mouse control's value now. It knows
+// the buttons 9, 10 and 11 only (and, called for any control, moves the menus' cursor by the mouse's movement).
+inline constexpr uintptr_t kMouseControl = 0x0067DAE0;
+// int __thiscall (const char* name, int fallback) (ret 8) of the game's settings object: a number of the game's
+// registry key (the bindings, the sound
+// levels "slider_soundvolume" / "slider_musicvolume", the display options).
+inline constexpr uintptr_t kRegNumber = 0x00674850;
 
 // The engine's pads: mPad[4], 0x138 bytes each; +0x2C buttons held, +0x30 pressed, +0x34 released,
 // +0x38 sticks (4 signed bytes), +0x3C state, +0x44 port (short).

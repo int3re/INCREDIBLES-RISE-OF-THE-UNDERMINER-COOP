@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "launcher/keys.h"
 #include "launcher/launcher.h"
 
 namespace lz {
@@ -28,11 +29,27 @@ struct Info {
   const wchar_t* label;
   const char* key;
   Kind kind;
-  const wchar_t* section;
+  const wchar_t* section;   // of in2net.ini; null: a number the game keeps in the registry, under the name `ini`
   const wchar_t* ini;
-  const wchar_t* fallback;  // the value when the ini has none: the mod's default
+  const wchar_t* fallback;  // the value when there is none: the mod's default (the game's, for a number of its own)
   std::vector<Choice> choices;
 };
+
+// A level's values: 0 to 100 by fives.
+std::vector<Choice> levels() {
+  static std::wstring names[21], values[21];  // (made once: the choices point into them)
+  static bool made = false;
+  std::vector<Choice> out;
+  for (int i = 0; i <= 20; ++i) {
+    if (!made) {
+      values[i] = std::to_wstring(i * 5);
+      names[i] = values[i] + L" %";
+    }
+    out.push_back({names[i].c_str(), values[i].c_str()});
+  }
+  made = true;
+  return out;
+}
 // The values are the ones the mod reads (src/mod/config.cpp, dist/in2net.ini).
 const Info kInfo[kRows] = {
     {L"Окно игры", "mode", Kind::Choice, L"video", L"mode", L"borderless",
@@ -57,6 +74,9 @@ const Info kInfo[kRows] = {
     {L"Задержка ввода", "delay", Kind::Choice, L"net", L"delay", L"2",
      {{L"1 кадр", L"1"}, {L"2 кадра", L"2"}, {L"3 кадра", L"3"}, {L"4 кадра", L"4"}, {L"5 кадров", L"5"}, {L"6 кадров", L"6"},
       {L"8 кадров", L"8"}, {L"10 кадров", L"10"}, {L"12 кадров", L"12"}}},
+    // (the game's own: data\Inc2OptionsMenu_win.xml, the sliders "soundvolume" and "musicvolume")
+    {L"Звуки", "sound", Kind::Level, nullptr, L"slider_soundvolume", L"100", levels()},
+    {L"Музыка", "music", Kind::Level, nullptr, L"slider_musicvolume", L"80", levels()},
 };
 
 struct Res {
@@ -172,6 +192,39 @@ bool put(const wchar_t* section, const wchar_t* key, const std::wstring& value) 
   return false;
 }
 
+// --- the game's own numbers, in the registry beside its keys ------------------------------------------------
+
+std::wstring reg_get(const wchar_t* name) {
+  DWORD type = 0, size = sizeof(DWORD), v = 0;
+  if (RegGetValueW(HKEY_CURRENT_USER, keys::root().c_str(), name, RRF_RT_REG_DWORD, &type, &v, &size) != ERROR_SUCCESS) return L"";
+  return std::to_wstring(v);
+}
+
+bool reg_put(const wchar_t* name, const std::wstring& value) {
+  if (g.canned) return true;
+  const DWORD v = static_cast<DWORD>(_wtoi(value.c_str()));
+  HKEY key = nullptr;
+  LONG e = RegCreateKeyExW(HKEY_CURRENT_USER, keys::root().c_str(), 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
+  if (e == ERROR_SUCCESS) {
+    e = RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&v), sizeof(v));
+    RegCloseKey(key);
+  }
+  if (e == ERROR_SUCCESS) return true;
+  g.error = L"Громкость не записалась в настройки игры (ошибка " + std::to_wstring(e) + L").";
+  return false;
+}
+
+// A row's value where it is kept.
+std::wstring stored_value(const Info& info) {
+  if (g.canned) return L"";
+  if (!info.section) return reg_get(info.ini);
+  return g.mod ? get(info.section, info.ini) : std::wstring();
+}
+
+bool store(const Info& info, const std::wstring& value) {
+  return info.section ? put(info.section, info.ini, value) : reg_put(info.ini, value);
+}
+
 bool is_number(const std::wstring& v) { return !v.empty() && (iswdigit(v[0]) || v[0] == L'-' || v[0] == L'.'); }
 
 // The choice a value of the ini means: the one that has it, the nearest for a number between the
@@ -231,7 +284,7 @@ void read_file() {
   g.mod = g.canned || (!g.dir.empty() && core::exists(g.ini));
   for (int r = 0; r < kRows; ++r) {
     const Info& info = kInfo[r];
-    const std::wstring v = g.mod && !g.canned ? get(info.section, info.ini) : std::wstring();
+    const std::wstring v = stored_value(info);
     if (r == kResolution)
       make_resolutions(v);
     else
@@ -262,6 +315,7 @@ const wchar_t* label(Row r) { return kInfo[r].label; }
 const char* key(Row r) { return kInfo[r].key; }
 
 bool usable(Row r) {
+  if (!kInfo[r].section) return true;  // (the game's own: there with or without the mod)
   if (!g.mod) return false;
   // "the game's own full screen": the mod leaves the picture alone, its frame is the game's
   const bool own_screen = std::wstring(kInfo[kMode].choices[static_cast<size_t>(g.cur[kMode])].value) == L"game";
@@ -283,23 +337,29 @@ bool set(Row r, int v) {
     g.error = L"Эта настройка сейчас не действует.";
     return false;
   }
-  v = ((v % n) + n) % n;  // (the arrows go round)
+  if (kInfo[r].kind == Kind::Level)
+    v = v < 0 ? 0 : v >= n ? n - 1 : v;  // (a level stops at its ends)
+  else
+    v = ((v % n) + n) % n;  // (the arrows go round)
   const std::wstring value = r == kResolution ? g.res[static_cast<size_t>(v)].value : kInfo[r].choices[static_cast<size_t>(v)].value;
-  if (!put(kInfo[r].section, kInfo[r].ini, value)) return false;
+  if (!store(kInfo[r], value)) return false;
   g.cur[r] = v;
   return true;
 }
 
 bool reset(int page) {
-  const int from = page == 1 ? 0 : kFirstNet, to = page == 1 ? kFirstNet : kRows;
-  if (!g.mod) return true;
-  for (int r = from; r < to; ++r) {
+  static const int kFrom[4] = {0, kFirstNet, kFirstSound, kRows};
+  if (page < 1 || page > 3) return true;
+  for (int r = kFrom[page - 1]; r < kFrom[page]; ++r) {
     const Info& info = kInfo[r];
-    if (!put(info.section, info.ini, info.fallback)) return false;
+    if (info.section && !g.mod) continue;
+    if (!store(info, info.fallback)) return false;
   }
   read_file();
   return true;
 }
+
+int percent(Row r) { return _wtoi(kInfo[r].choices[static_cast<size_t>(g.cur[r])].value); }
 
 const std::wstring& error() { return g.error; }
 std::wstring ini_file() { return g.ini; }

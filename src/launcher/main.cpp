@@ -103,8 +103,8 @@ void flash(const std::wstring& text, int ms = 4500) {
   dirty();
 }
 
-// The mod's settings of the ГРАФИКА and СЕТЬ pages, as the game's folder has them now, and the game's
-// keys of УПРАВЛЕНИЕ, as the registry has them.
+// The settings of the ГРАФИКА, ЗВУК and СЕТЬ pages, as the game's folder and the registry have them now, and
+// the game's keys and mouse buttons of УПРАВЛЕНИЕ, as the registry has them.
 void load_game_settings() {
   gset::load(g.has_game ? g.set.game_dir : std::wstring());
   keys::load();
@@ -510,6 +510,20 @@ void bind_key(int code) {
   dirty();
 }
 
+// УПРАВЛЕНИЕ: a button of the mouse (0 left, 1 right, 2 middle, 3 and 4 the side ones) pressed on the cell
+// that waits: the action gets it besides its key - or loses it, if it is the one it has.
+void bind_mouse(int button) {
+  const int action = g.capture;
+  if (action < 0) return;
+  g.capture = -1;
+  const bool had = keys::mouse(g.keys_player, action) == button;
+  const bool ok = keys::set_mouse(g.keys_player, action, button);
+  logf(std::wstring(L"mouse p") + std::to_wstring(g.keys_player + 1) + L" " + core::wide(keys::id(action)) + (had ? L" loses " : L" = ") +
+       keys::mouse_name(button) + (ok ? L"" : L": NOT WRITTEN"));
+  if (!ok) flash(keys::error().empty() ? std::wstring(L"Кнопка мыши не записалась") : keys::error(), 8000);
+  dirty();
+}
+
 // A row of the mod's settings: one of its parts was pressed.
 void act_row(int id) {
   const gset::Row r = static_cast<gset::Row>((id - H_Row) / kRowParts);
@@ -559,6 +573,7 @@ void act(int id) {
     case H_Tab1:
     case H_Tab2:
     case H_Tab3:
+    case H_Tab4:
       g.tab = static_cast<Tab>(id - H_Tab0);
       if (g.tab != Tab::Launcher) load_game_settings();
       break;
@@ -570,7 +585,7 @@ void act(int id) {
         else if (!keys::freed().empty()) flash(L"Без клавиши теперь: " + keys::freed(), 8000);
         break;
       }
-      bool ok = g.tab == Tab::Graphics ? gset::reset(1) : g.tab == Tab::Net ? gset::reset(2) : true;
+      bool ok = gset::reset(g.tab == Tab::Graphics ? 1 : g.tab == Tab::Net ? 2 : g.tab == Tab::Sound ? 3 : 0);
       logf(ok ? L"page: defaults" : L"page: defaults NOT WRITTEN");
       if (!ok) say_why();
       break;
@@ -778,8 +793,8 @@ int hit_by_name(const std::wstring& n) {
   static const struct {
     const wchar_t* name;
     int id;
-  } more[] = {{L"tab.launcher", H_Tab0}, {L"tab.graphics", H_Tab1}, {L"tab.controls", H_Tab2}, {L"tab.net", H_Tab3},
-              {L"reset", H_Reset}, {L"keys.one", H_KeysOne}, {L"keys.two", H_KeysTwo}};
+  } more[] = {{L"tab.launcher", H_Tab0}, {L"tab.graphics", H_Tab1}, {L"tab.sound", H_Tab2}, {L"tab.controls", H_Tab3},
+              {L"tab.net", H_Tab4},      {L"reset", H_Reset},       {L"keys.one", H_KeysOne}, {L"keys.two", H_KeysTwo}};
   for (auto& x : more)
     if (n == x.name) return x.id;
   if (n.rfind(L"key.", 0) == 0) {
@@ -894,10 +909,25 @@ void drive() {
         LPARAM lp = 1 | (static_cast<LPARAM>(wcstol(f[1].c_str(), nullptr, 0) & 0xFF) << 16) | (static_cast<LPARAM>(_wtoi(f[2].c_str()) & 1) << 24);
         SendMessageW(g_hwnd, WM_KEYDOWN, static_cast<WPARAM>(wcstol(f[0].c_str(), nullptr, 0)), lp);
       }
-    } else if (op == L"rdown") {
-      SendMessageW(g_hwnd, WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(4, 60));
-    } else if (op == L"xdown") {
-      SendMessageW(g_hwnd, WM_XBUTTONDOWN, MAKEWPARAM(0, _wtoi(arg.c_str()) == 2 ? XBUTTON2 : XBUTTON1), MAKELPARAM(4, 60));
+    } else if (op == L"rdown" || op == L"mdown" || op == L"xdown") {
+      // rdown[:x,y], mdown[:x,y], xdown:<1 | 2>[:x,y] - that button of the mouse goes down at a place of the
+      // window (by default a corner where nothing is), as the mouse sends it
+      paint(g_hwnd);
+      std::wstring at = arg;
+      int which = 1;
+      if (op == L"xdown") {
+        which = _wtoi(arg.c_str()) == 2 ? 2 : 1;
+        const size_t sep = arg.find(L':');
+        at = sep == std::wstring::npos ? std::wstring() : arg.substr(sep + 1);
+      }
+      const float s = scale_of(g_hwnd);
+      const size_t comma = at.find(L',');
+      const LPARAM lp = comma == std::wstring::npos
+                            ? MAKELPARAM(4, 60)
+                            : MAKELPARAM(static_cast<int>(_wtof(at.c_str()) * s), static_cast<int>(_wtof(at.c_str() + comma + 1) * s));
+      if (op == L"rdown") SendMessageW(g_hwnd, WM_RBUTTONDOWN, MK_RBUTTON, lp);
+      else if (op == L"mdown") SendMessageW(g_hwnd, WM_MBUTTONDOWN, MK_MBUTTON, lp);
+      else SendMessageW(g_hwnd, WM_XBUTTONDOWN, MAKEWPARAM(0, which == 2 ? XBUTTON2 : XBUTTON1), lp);
     } else if (op == L"state") {
       log_state();
     } else if (op == L"shot") {
@@ -923,6 +953,15 @@ void tick(HWND hwnd) {
   if (g_drop_old_until && (core::drop_old_self() || now > g_drop_old_until)) g_drop_old_until = 0;
   if (g_drive) drive();
   if (g_hwnd && (moving() || g_dirty) && !IsIconic(hwnd)) InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+// A button of the mouse went down at a place of the window. True: it was for the cell that waits.
+bool mouse_for_cell(int button, LPARAM lp) {
+  if (g.capture < 0) return false;
+  const float s = scale_of(g_hwnd);
+  if (hit_at(GET_X_LPARAM(lp) / s, GET_Y_LPARAM(lp) / s) != H_Key + g.capture) return false;
+  bind_mouse(button);
+  return true;
 }
 
 LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -984,7 +1023,17 @@ LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return TRUE;
       }
       break;
+    case WM_RBUTTONDOWN:  // (the other buttons do nothing but give themselves to a cell of УПРАВЛЕНИЕ that waits)
+      mouse_for_cell(1, lp);
+      return 0;
+    case WM_MBUTTONDOWN:
+      mouse_for_cell(2, lp);
+      return 0;
+    case WM_XBUTTONDOWN:
+      mouse_for_cell(GET_XBUTTON_WPARAM(wp) == XBUTTON2 ? 4 : 3, lp);
+      return TRUE;
     case WM_LBUTTONDOWN: {
+      if (mouse_for_cell(0, lp)) return 0;
       float s = scale_of(hwnd);
       g.pressed = hit_at(GET_X_LPARAM(lp) / s, GET_Y_LPARAM(lp) / s);
       if (g.proxy_focus && g.pressed != H_ProxyField) {

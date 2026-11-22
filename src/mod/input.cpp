@@ -13,6 +13,7 @@
 #include "mod/netpage.h"
 #include "mod/netplay.h"
 #include "mod/patch.h"
+#include "mod/sim.h"
 #include "mod/video.h"
 
 namespace input {
@@ -99,10 +100,22 @@ bool parse_key(unsigned frame, const std::string& t) {
   return false;
 }
 
+constexpr int kMouseButtons = 5;  // left, right, middle, side 1, side 2: the game's mouse controls 9 ... 13
+constexpr int kMouseFirst = 9;
+const char* const kMouseNames[kMouseButtons] = {"left", "right", "middle", "side1", "side2"};
+
 bool parse_token(const std::string& t, Press& p) {
   static const char* digital[] = {"up", "down", "left", "right", "start", "back", "l3", "r3"};
   static const char* pressure[] = {"a", "b", "x", "y", "black", "white", "lt", "rt"};
   static const char* sticks[] = {"lx", "ly", "rx", "ry"};
+  if (t.compare(0, 6, "mouse.") == 0) {  // a button of the mouse held, as if the game's window were in front
+    for (int i = 0; i < kMouseButtons; ++i)
+      if (t.compare(6, std::string::npos, kMouseNames[i]) == 0) {
+        p.kind = 3, p.index = i, p.value = 1;
+        return true;
+      }
+    return false;
+  }
   for (int i = 0; i < 8; ++i)
     if (t == digital[i]) {
       p.kind = 0, p.index = i, p.value = 1;
@@ -178,11 +191,66 @@ void apply_script(int player, Pad& pad) {
       pad.buttons |= static_cast<uint8_t>(1u << p.index);
     else if (p.kind == 1)
       pad.analog[p.index] = static_cast<uint8_t>(p.value);
-    else
+    else if (p.kind == 2)
       (p.index == 0 ? pad.lx : p.index == 1 ? pad.ly : p.index == 2 ? pad.rx : pad.ry) = static_cast<int16_t>(p.value);
   }
 }
 
+// --- the mouse's buttons as controls ------------------------------------------------------------
+// The game binds a control to a key, a button or an axis of the mouse, or a pad's (three numbers an
+// action in its registry key: game.h). For the mouse it asks one function for the control's value -
+// and that function knows the left, the right and the middle button only: the game's own names for the
+// side buttons lead nowhere. Besides, in a network game the mod gives the game no mouse at all (its
+// movement is this PC's alone). So a button's value is told here: as Windows holds the button, while the
+// game's window is in front. It goes into the pad of the player whose control it is - in a network game
+// before that pad is sent, so both games get the same.
+// Not in the main menu's scene: there a click chooses what is under the game's cursor.
+int g_local_role = 0;  // (in a network game: the player this PC plays)
+
+bool mouse_button(int button) {
+  uint32_t scene = sim::scene();
+  if (!scene || scene == 0x4D4E5553) return false;  // 'MNUS'
+  unsigned f = video::frames();
+  for (const Press& p : g_script)  // (a lab script's "mouse.left", of this PC's player: the game's window is never in front there)
+    if (p.kind == 3 && p.index == button && p.player == g_local_role && f >= p.from && f <= p.to) return true;
+  static const int vk[kMouseButtons] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
+  HWND wnd = video::window();
+  return wnd && GetForegroundWindow() == wnd && (GetAsyncKeyState(vk[button]) & 0x8000) != 0;
+}
+
+// float __thiscall (int control, int player) of the port's input manager: a mouse control's value now.
+using MouseControl_t = float(__thiscall*)(void* self, int control, int player);
+MouseControl_t oMouseControl = nullptr;
+
+float __fastcall hkMouseControl(void* self, void* /*edx*/, int control, int player) {
+  if (control >= kMouseFirst && control < kMouseFirst + kMouseButtons) {
+    bool held = mouse_button(control - kMouseFirst);
+    if (tlog::enabled(tlog::Debug)) {
+      static unsigned shown = 0;
+      unsigned bit = 1u << (control - kMouseFirst), now = held ? shown | bit : shown & ~bit;
+      if (now != shown) {
+        shown = now;
+        LOGD("input: mouse buttons held %02X", now);
+      }
+    }
+    return held ? 1.0f : 0.0f;
+  }
+  return oMouseControl(self, control, player);
+}
+
+// --- [debug] bind: numbers of the game's registry key told from the ini ---------------------------
+// The lab's copies of the game share the player's own registry key with the player's game: a test of a
+// binding must not write there. "bind = p0\PADX_1=0x20009, ..." tells the game these numbers instead.
+using RegNumber_t = int(__thiscall*)(void* self, const char* name, int fallback);  // (ret 8: a method of the game's settings object)
+RegNumber_t oRegNumber = nullptr;
+std::vector<std::pair<std::string, int>> g_binds;
+
+int __fastcall hkRegNumber(void* self, void* /*edx*/, const char* name, int fallback) {
+  if (name)
+    for (const auto& b : g_binds)
+      if (_stricmp(b.first.c_str(), name) == 0) return b.second;
+  return oRegNumber(self, name, fallback);
+}
 // --- the game's "gamepad state of player <handle - 1>" -----------------------------
 using GetState_t = int(__cdecl*)(int handle, GameState* state);
 GetState_t oGetState = nullptr;
@@ -268,6 +336,7 @@ bool script_key(unsigned& vk) {
 }
 
 Pad read_local(int role) {
+  g_local_role = role;
   Pad pad;
   if (oGetState) {
     GameState st{};
@@ -289,6 +358,31 @@ void install(const Config& cfg) {
   if (!cfg.script.empty()) {
     std::wstring name(cfg.script.begin(), cfg.script.end());
     load_script(module_dir() + name);
+  }
+  static const uint8_t mouse_head[] = {0x83, 0xEC, 0x08, 0xDB, 0x81, 0xC0, 0x04, 0x00, 0x00};  // sub esp,8; fild dword [ecx+0x4C0]
+  if (patch::bytes_are(game::kMouseControl, mouse_head, sizeof(mouse_head)))
+    patch::hook("a mouse control's value", game::kMouseControl, (void*)&hkMouseControl, (void**)&oMouseControl);
+  else
+    LOGE("input: the mouse control function is not where it should be; the mouse's buttons are left to the game");
+  // [debug] bind = p0\PADX_1=0x20009, p0\PADB_1=0x2000A
+  for (size_t i = 0; i < cfg.binds.size();) {
+    size_t j = cfg.binds.find(',', i);
+    if (j == std::string::npos) j = cfg.binds.size();
+    std::string one = cfg.binds.substr(i, j - i);
+    size_t eq = one.find('=');
+    if (eq != std::string::npos) {
+      std::string name = one.substr(0, eq);
+      while (!name.empty() && name.front() == ' ') name.erase(0, 1);
+      while (!name.empty() && name.back() == ' ') name.pop_back();
+      g_binds.push_back({name, static_cast<int>(strtoul(one.c_str() + eq + 1, nullptr, 0))});
+    }
+    i = j + 1;
+  }
+  if (!g_binds.empty()) {
+    static const uint8_t reg_head[] = {0x83, 0xEC, 0x08, 0x8D, 0x04, 0x24, 0x50};  // sub esp,8; lea eax,[esp]; push eax
+    if (patch::bytes_are(game::kRegNumber, reg_head, sizeof(reg_head)) &&
+        patch::hook("a number of the game's registry key", game::kRegNumber, (void*)&hkRegNumber, (void**)&oRegNumber))
+      LOGI("debug: %u numbers of the game's registry key are told from the ini (bind)", (unsigned)g_binds.size());
   }
   static const uint8_t head[] = {0x8B, 0x0D, 0x2C, 0xF3, 0x7F, 0x00, 0x53, 0x55, 0x56, 0x57};  // mov ecx,[0x7FF32C]; push ebx ...
   if (!patch::bytes_are(game::kPadGetState, head, sizeof(head))) {

@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include <cstring>
+
 #include "launcher/launcher.h"
 
 namespace lz {
@@ -11,6 +13,8 @@ namespace {
 
 const wchar_t kRoot[] = L"Software\\THQ\\the incredibles rise of the underminer";
 constexpr DWORD kKeyboard = 1, kNoKey = 0xFF;
+constexpr DWORD kMouse = 2, kMouseFirst = 9;  // (the game's table at 0x704DE8: 9 MS_LEFT, 10 MS_RIGHT, 11 MS_MIDDLE, 12 MS_BTN4, 13 MS_BTN5)
+const wchar_t* const kMouseNames[kMouseButtons] = {L"ЛКМ", L"ПКМ", L"СКМ", L"Бок.1", L"Бок.2"};
 
 struct Action {
   const wchar_t* reg;    // the game's name of it
@@ -71,7 +75,8 @@ const KeyName kKeyNames[] = {
 struct State {
   std::wstring root = kRoot;
   bool canned = false, kept = false;
-  DWORD first[kPlayers][kActions] = {};  // <ACTION>_0 as the game sees it
+  DWORD first[kPlayers][kActions] = {};   // <ACTION>_0 as the game sees it
+  DWORD second[kPlayers][kActions] = {};  // <ACTION>_1: none, a button of the mouse, or what the game's own screen put there
   std::wstring error, freed;
 };
 State g;
@@ -140,9 +145,22 @@ bool put(int player, int action, int code) {
   return true;
 }
 
+// The button of the mouse a number means: -1 if it is not one.
+int mouse_of(DWORD v) {
+  const DWORD device = (v >> 16) & 0xFF, c = v & 0xFF;
+  return device == kMouse && c >= kMouseFirst && c < kMouseFirst + kMouseButtons ? static_cast<int>(c - kMouseFirst) : -1;
+}
+
+bool put_second(int player, int action, DWORD v) {
+  if (!write(player, value_name(action, 1), v)) return false;
+  g.second[player][action] = v;
+  return true;
+}
+
 }  // namespace
 
 void use_root(const std::wstring& subkey) { g.root = subkey; }
+const std::wstring& root() { return g.root; }
 
 void load() {
   g.canned = false;
@@ -154,6 +172,8 @@ void load() {
       const DWORD device = (v >> 16) & 0xFF;
       // (the game takes a number only if its device is one it knows: else the default stays)
       g.first[p][a] = there && v != 0xFFFFFFFF && device >= 1 && device < 13 ? v : default_of(p, a);
+      DWORD second = 0;
+      g.second[p][a] = read(p, value_name(a, 1), second) ? second : of_key(0);
     }
 }
 
@@ -161,7 +181,18 @@ void load_canned() {
   g.canned = true;
   g.error.clear();
   for (int p = 0; p < kPlayers; ++p)
-    for (int a = 0; a < kActions; ++a) g.first[p][a] = default_of(p, a);
+    for (int a = 0; a < kActions; ++a) {
+      g.first[p][a] = default_of(p, a);
+      g.second[p][a] = of_key(0);
+    }
+  // (the picture shows what the page is for: player 1's blows on the mouse)
+  static const struct {
+    const char* id;
+    int button;
+  } shown[] = {{"punch", 0}, {"grab", 1}, {"super_l", 3}, {"super_r", 4}};
+  for (const auto& s : shown)
+    for (int a = 0; a < kActions; ++a)
+      if (strcmp(kActionList[a].id, s.id) == 0) g.second[0][a] = (kMouse << 16) | (kMouseFirst + static_cast<DWORD>(s.button));
 }
 
 const wchar_t* group_name(int group) { return kGroupNames[group]; }
@@ -180,7 +211,7 @@ std::wstring name(int code) {
 
 bool allowed(int code) { return code > 0 && !name(code).empty(); }
 
-std::wstring shown(int player, int action) {
+std::wstring key_shown(int player, int action) {
   const DWORD v = g.first[player][action];
   const int c = key_of(v);
   if (c > 0) {
@@ -189,6 +220,33 @@ std::wstring shown(int player, int action) {
   }
   if (c == 0) return L"—";
   return ((v >> 16) & 0xFF) == 2 ? L"Мышь" : L"Геймпад";
+}
+
+// What a cell says: the key, and the mouse's button after it if the action has one ("O / ЛКМ").
+std::wstring shown(int player, int action) {
+  const std::wstring key = key_shown(player, action);
+  const int button = mouse(player, action);
+  if (button < 0) return key;
+  return code(player, action) == 0 ? std::wstring(kMouseNames[button]) : key + L" / " + kMouseNames[button];
+}
+
+int mouse(int player, int action) { return mouse_of(g.second[player][action]); }
+const wchar_t* mouse_name(int button) { return button >= 0 && button < kMouseButtons ? kMouseNames[button] : L""; }
+
+bool set_mouse(int player, int action, int button) {
+  g.error.clear();
+  g.freed.clear();
+  if (!has(player, action) || fixed(player, action) || button < 0 || button >= kMouseButtons) {
+    g.error = L"Этому действию кнопку мыши не дать.";
+    return false;
+  }
+  keep();
+  const bool had = mouse(player, action) == button;
+  for (int p = 0; p < kPlayers; ++p)  // whoever has the button loses it (this action too, if it is pressed again)
+    for (int a = 0; a < kActions; ++a)
+      if (has(p, a) && mouse(p, a) == button && !put_second(p, a, of_key(0))) return false;
+  if (had) return true;
+  return put_second(player, action, (kMouse << 16) | (kMouseFirst + static_cast<DWORD>(button)));
 }
 
 bool set(int player, int action, int code) {
@@ -219,9 +277,7 @@ bool set(int player, int action, int code) {
         given = true;
       }
       // (a second key of the game's own screen that is the same one: none)
-      DWORD second = 0;
-      if (!g.canned && read(p, value_name(a, 1), second) && key_of(second) == code && !write(p, value_name(a, 1), of_key(0)))
-        return false;
+      if (key_of(g.second[p][a]) == code && !put_second(p, a, of_key(0))) return false;
     }
   return put(player, action, code);
 }
@@ -238,6 +294,7 @@ bool reset(int player) {
     for (int b = 0; b < kActions; ++b)
       if (has(other, b) && key_of(g.first[other][b]) == def && !put(other, b, 0)) return false;
     if (!put(player, a, def)) return false;
+    if (g.second[player][a] != of_key(0) && !put_second(player, a, of_key(0))) return false;  // (the game's default: no second one)
   }
   return true;
 }

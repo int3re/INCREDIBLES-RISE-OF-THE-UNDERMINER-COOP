@@ -1,4 +1,4 @@
-// in2net.ini, read once at start-up. Sections: [log], [video], [debug].
+// in2net.ini, read once at start-up. Sections: [log], [video], [net], [debug].
 // Unknown keys are ignored; a missing file means defaults.
 #pragma once
 #include <string>
@@ -97,6 +97,9 @@ struct Config {
   std::vector<unsigned> shots;
   // script = <file next to the exe>: presses by frame, lines of "<frame>[-<frame>] [p2.]<control>".
   std::string script;
+  // bind = p0\PADX_1=0x20009, ...: numbers of the game's registry key told to it from here (a binding to try
+  // without writing to the key, which a lab copy shares with the player's own game).
+  std::string binds;
   // save_dir = <name>: the game's saves go to this folder next to the exe (a lab copy's own).
   std::string save_dir;
   // fast = 1: frames are not held to 60 a second (the game's clock is not real time anyway).
