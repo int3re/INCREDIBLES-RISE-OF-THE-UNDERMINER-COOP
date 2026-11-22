@@ -1,0 +1,33 @@
+# Build output
+/build/
+/out/
+CMakeUserPresets.json
+
+# Visual Studio
+.vs/
+*.user
+
+# Release archives are published on the Releases page, not in the repository
+*.zip
+
+# Never part of the repository: the Steamworks SDK and files of the game
+/steamworks_sdk*/
+incrotu.exe
+*.HIP
+*.HOP
+*.hip
+*.hop
+
+# Kept out of the repository: the notes and tools of taking the game's exe apart (it is a protected file),
+# and the lab's dumper of the game's memory
+/re/
+/tools/re/
+/tools/lab/run_dump.py
+/src/mod/dump.cpp
+/src/mod/dump.h
+in2net-dump.*
+__pycache__/
+
+# What the mod writes next to the game
+in2net.log
+in2net-sim.log
