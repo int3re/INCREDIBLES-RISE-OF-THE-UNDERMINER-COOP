@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest/download/in2net-launcher.exe"><img alt="Скачать in2net-launcher.exe" src="https://img.shields.io/badge/%D0%A1%D0%9A%D0%90%D0%A7%D0%90%D0%A2%D0%AC-in2net--launcher.exe-FFD63C?style=for-the-badge&labelColor=C8171A" height="46"></a><br>
+  <a href="https://github.com/int3re/INCREDIBLES-RISE-OF-THE-UNDERMINER-COOP/releases/latest/download/in2net-launcher.exe"><img alt="Скачать in2net-launcher.exe" src="https://img.shields.io/badge/%D0%A1%D0%9A%D0%90%D0%A7%D0%90%D0%A2%D0%AC-in2net--launcher.exe-FFD63C?style=for-the-badge&labelColor=C8171A" height="46"></a><br>
   <sub>Один файл, около 4,6 МБ: мод лежит внутри лаунчера. Он ставит мод, обновляет его и запускает игру.</sub>
 </p>
 
@@ -64,7 +64,7 @@ Underminer*). В игре есть режим «ДВА ИГРОКА», но то
 
 ## Быстрый старт
 
-1. Скачайте [`in2net-launcher.exe`](../../releases/latest/download/in2net-launcher.exe) и запустите его.
+1. Скачайте [`in2net-launcher.exe`](https://github.com/int3re/INCREDIBLES-RISE-OF-THE-UNDERMINER-COOP/releases/latest/download/in2net-launcher.exe) и запустите его.
 2. Если лаунчер не нашёл игру сам, укажите папку, где лежит `incrotu.exe`.
 3. Нажмите **«УСТАНОВИТЬ МОД»**, затем **«ИГРАТЬ»**.
 4. В главном меню игры выберите **«СЕТЕВАЯ ИГРА»**: хост — «СОЗДАТЬ ИГРУ», затем «НАЧАТЬ ИГРУ»; гость входит в
@@ -113,7 +113,7 @@ Underminer*). В игре есть режим «ДВА ИГРОКА», но то
 - Мод сделан для одного издания игры: лаунчер сверяет `incrotu.exe` и предупреждает, если файл другой.
 
 Если что-то пошло не так, пришлите `in2net.log` и `in2net-menu.log` из папки игры (в лаунчере: настройки →
-«Открыть журнал», «Журнал встречи») — в [Issues](../../issues).
+«Открыть журнал», «Журнал встречи») — в [Issues](https://github.com/int3re/INCREDIBLES-RISE-OF-THE-UNDERMINER-COOP/issues).
 
 ## Сборка из исходников
 
