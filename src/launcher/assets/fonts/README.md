@@ -7,7 +7,7 @@
 | `DelaGothicOne-Regular.ttf` | Dela Gothic One, (c) 2020 The Dela Gothic Project Authors | SIL Open Font License 1.1, `OFL-DelaGothicOne.txt` |
 
 These are **modified versions**, made by `tools/launcher_fonts.py`; none of the families declares a Reserved
-Font Name. The fonts are compiled into `tmnt2net-launcher.exe` as resources.
+Font Name. The fonts are compiled into `in2net-launcher.exe` as resources.
 
 - Onest and JetBrains Mono: from the files Google Fonts serves (variable fonts, one file per range of
   characters). For each weight the Latin and the Cyrillic file were pinned at that weight and merged into one
