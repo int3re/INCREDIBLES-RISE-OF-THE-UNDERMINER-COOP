@@ -46,7 +46,8 @@ stretching, a window without a frame, smoothed edges and sharp textures, attacks
 
 **Other mods of the series:**
 [TMNT (2003) — co-op for up to four](https://github.com/int3re/TMNT-2003-COOP) ·
-[TMNT 2: Battle Nexus — co-op for up to four](https://github.com/int3re/TMNT-2-BATTLE-NEXUS-COOP)
+[TMNT 2: Battle Nexus — co-op for up to four](https://github.com/int3re/TMNT-2-BATTLE-NEXUS-COOP) ·
+[TMNT Mutant Melee — network play for up to four players](https://github.com/int3re/TMNT-MUTANT-MELEE-COOP)
 
 ## Contents
 

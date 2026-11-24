@@ -42,7 +42,8 @@ Underminer*). В игре есть режим «ДВА ИГРОКА», но то
 
 **Другие моды этой серии:**
 [TMNT (2003) — кооператив до четырёх игроков](https://github.com/int3re/TMNT-2003-COOP) ·
-[TMNT 2: Battle Nexus — кооператив до четырёх игроков](https://github.com/int3re/TMNT-2-BATTLE-NEXUS-COOP)
+[TMNT 2: Battle Nexus — кооператив до четырёх игроков](https://github.com/int3re/TMNT-2-BATTLE-NEXUS-COOP) ·
+[TMNT Mutant Melee — игра по сети до четырёх игроков](https://github.com/int3re/TMNT-MUTANT-MELEE-COOP)
 
 ## Содержание
 
